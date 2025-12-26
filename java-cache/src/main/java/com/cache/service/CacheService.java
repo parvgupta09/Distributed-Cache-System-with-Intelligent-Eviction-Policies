@@ -9,9 +9,23 @@ import java.util.concurrent.ConcurrentHashMap;
 public class CacheService {
 
     private final ConcurrentHashMap<String, CacheEntry> store = new ConcurrentHashMap<>();
-    private final AdaptiveCache eviction = new AdaptiveCache();
+    private final EvictionPolicy eviction;
     private final CacheMetrics metrics = new CacheMetrics();
     private final int CAPACITY = 100;
+
+    public CacheService() {
+
+        boolean USE_ADAPTIVE = true;
+        boolean USE_LFU = false;
+
+        if (USE_ADAPTIVE) {
+            this.eviction = new AdaptiveCache();
+        } else if (USE_LFU) {
+            this.eviction = new LFUCache();
+        } else {
+            this.eviction = new LRUCache();
+        }
+    }
 
     public synchronized String get(String key) {
         CacheEntry e = store.get(key);
@@ -21,7 +35,12 @@ public class CacheService {
             return null;
         }
         metrics.hits++;
-        eviction.switchPolicy(metrics.hitRate());
+
+        // Adaptive behavior only if using AdaptiveCache
+        if (eviction instanceof AdaptiveCache adaptive) {
+            adaptive.switchPolicy(metrics.hitRate());
+        }
+
         return e.value;
     }
 
@@ -31,6 +50,7 @@ public class CacheService {
             store.remove(evict);
             metrics.evictions++;
         }
+
         CacheEntry entry = new CacheEntry(key, value, ttl);
         store.put(key, entry);
         eviction.put(key, entry);
